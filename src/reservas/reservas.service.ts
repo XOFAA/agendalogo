@@ -1,0 +1,191 @@
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
+import { StatusReserva, StatusSlot } from '@prisma/client';
+
+@Injectable()
+export class ReservasService {
+  private readonly horasLimiteCancelamento: number;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {
+    this.horasLimiteCancelamento = this.config.get<number>('CANCELAMENTO_HORAS_LIMITE', 2);
+  }
+
+  async criarReservaPublica(params: {
+    tenantId: string;
+    quadraId: string;
+    slotId: string;
+    usuarioId: string;
+  }) {
+    const agora = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const slot = await tx.slotDisponibilidade.findFirst({
+        where: {
+          id: params.slotId,
+          tenantId: params.tenantId,
+          quadraId: params.quadraId,
+        },
+      });
+
+      if (!slot) {
+        throw new NotFoundException({
+          codigo: 'SLOT_NAO_ENCONTRADO',
+          mensagem: 'Slot nao encontrado.',
+        });
+      }
+
+      if (slot.status !== StatusSlot.ABERTO) {
+        throw new ConflictException({
+          codigo: 'SLOT_INDISPONIVEL',
+          mensagem: 'Slot nao esta disponivel para reserva.',
+        });
+      }
+
+      if (slot.inicioEm <= agora) {
+        throw new UnprocessableEntityException({
+          codigo: 'SLOT_NO_PASSADO',
+          mensagem: 'Nao e permitido reservar slot no passado.',
+        });
+      }
+
+      const reserva = await tx.reserva.create({
+        data: {
+          tenantId: params.tenantId,
+          quadraId: params.quadraId,
+          usuarioId: params.usuarioId,
+          slotId: params.slotId,
+          status: StatusReserva.PENDENTE,
+          valorTotalCentavos: slot.precoCentavos,
+        },
+      });
+
+      await tx.slotDisponibilidade.update({
+        where: { id: slot.id },
+        data: { status: StatusSlot.RESERVADO },
+      });
+
+      return reserva;
+    });
+  }
+
+  async listarMinhasReservas(usuarioId: string) {
+    return this.prisma.reserva.findMany({
+      where: { usuarioId },
+      include: { slot: true, quadra: true, tenant: true },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
+  async listarReservasTenant(params: {
+    tenantId: string;
+    status?: StatusReserva;
+    dataInicio?: Date;
+    dataFim?: Date;
+  }) {
+    return this.prisma.reserva.findMany({
+      where: {
+        tenantId: params.tenantId,
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.dataInicio || params.dataFim
+          ? {
+              criadoEm: {
+                ...(params.dataInicio ? { gte: params.dataInicio } : {}),
+                ...(params.dataFim ? { lte: params.dataFim } : {}),
+              },
+            }
+          : {}),
+      },
+      include: { slot: true, quadra: true, usuario: true },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
+  async cancelarPorUsuario(usuarioId: string, reservaId: string) {
+    return this.cancelarInterno({ reservaId, usuarioId });
+  }
+
+  async cancelarPorTenant(tenantId: string, reservaId: string) {
+    return this.cancelarInterno({ reservaId, tenantId });
+  }
+
+  private async cancelarInterno(filtro: { reservaId: string; usuarioId?: string; tenantId?: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const reserva = await tx.reserva.findFirst({
+        where: {
+          id: filtro.reservaId,
+          ...(filtro.usuarioId ? { usuarioId: filtro.usuarioId } : {}),
+          ...(filtro.tenantId ? { tenantId: filtro.tenantId } : {}),
+        },
+        include: { slot: true },
+      });
+
+      if (!reserva) {
+        throw new NotFoundException({
+          codigo: 'RESERVA_NAO_ENCONTRADA',
+          mensagem: 'Reserva nao encontrada.',
+        });
+      }
+
+      if (reserva.status !== StatusReserva.PENDENTE && reserva.status !== StatusReserva.CONFIRMADA) {
+        throw new UnprocessableEntityException({
+          codigo: 'RESERVA_SEM_CANCELAMENTO',
+          mensagem: 'Somente reservas pendentes ou confirmadas podem ser canceladas.',
+        });
+      }
+
+      const limite = new Date(Date.now() + this.horasLimiteCancelamento * 60 * 60 * 1000);
+      if (reserva.slot.inicioEm <= limite) {
+        throw new UnprocessableEntityException({
+          codigo: 'FORA_JANELA_CANCELAMENTO',
+          mensagem: `Cancelamento permitido somente com ${this.horasLimiteCancelamento}h de antecedencia.`,
+        });
+      }
+
+      const reservaAtualizada = await tx.reserva.update({
+        where: { id: reserva.id },
+        data: { status: StatusReserva.CANCELADA },
+      });
+
+      await tx.slotDisponibilidade.update({
+        where: { id: reserva.slotId },
+        data: { status: StatusSlot.ABERTO },
+      });
+
+      return reservaAtualizada;
+    });
+  }
+
+  async confirmarPorTenant(tenantId: string, reservaId: string) {
+    const reserva = await this.prisma.reserva.findFirst({
+      where: { id: reservaId, tenantId },
+    });
+
+    if (!reserva) {
+      throw new NotFoundException({
+        codigo: 'RESERVA_NAO_ENCONTRADA',
+        mensagem: 'Reserva nao encontrada.',
+      });
+    }
+
+    if (reserva.status !== StatusReserva.PENDENTE) {
+      throw new UnprocessableEntityException({
+        codigo: 'STATUS_INVALIDO_CONFIRMACAO',
+        mensagem: 'Somente reserva PENDENTE pode ser confirmada.',
+      });
+    }
+
+    return this.prisma.reserva.update({
+      where: { id: reservaId },
+      data: { status: StatusReserva.CONFIRMADA },
+    });
+  }
+}

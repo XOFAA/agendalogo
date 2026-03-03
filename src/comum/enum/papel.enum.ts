@@ -1,0 +1,5 @@
+export enum Papel {
+  ADMIN_PLATAFORMA = 'ADMIN_PLATAFORMA',
+  DONO_TENANT = 'DONO_TENANT',
+  USUARIO = 'USUARIO',
+}

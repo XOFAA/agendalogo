@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum PapelUsuario {
+  ADMIN_PLATAFORMA
+  DONO_TENANT
+  USUARIO
+}
+
+enum TipoEsporte {
+  FUTEBOL
+  VOLEI
+  TENIS
+  BASQUETE
+  OUTROS
+}
+
+enum StatusSlot {
+  ABERTO
+  RESERVADO
+  BLOQUEADO
+}
+
+enum StatusReserva {
+  PENDENTE
+  CONFIRMADA
+  CANCELADA
+  EXPIRADA
+}
+
+model Tenant {
+  id        String    @id @default(cuid())
+  nome      String
+  slug      String    @unique
+  criadoEm  DateTime  @default(now())
+
+  usuarios  Usuario[]
+  quadras   Quadra[]
+  slots     SlotDisponibilidade[]
+  reservas  Reserva[]
+  avaliacoes Avaliacao[]
+  auditoria LogAuditoria[]
+}
+
+model Usuario {
+  id         String       @id @default(cuid())
+  nome       String
+  email      String       @unique
+  senhaHash  String
+  papel      PapelUsuario
+  tenantId   String?
+  criadoEm   DateTime     @default(now())
+
+  tenant     Tenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  reservas   Reserva[]
+  avaliacoes Avaliacao[]
+  logsAtor   LogAuditoria[] @relation("LogAtor")
+}
+
+model Quadra {
+  id          String               @id @default(cuid())
+  tenantId    String
+  nome        String
+  tipoEsporte TipoEsporte
+  ativa       Boolean              @default(true)
+  criadoEm    DateTime             @default(now())
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  slots       SlotDisponibilidade[]
+  reservas    Reserva[]
+
+  @@index([tenantId])
+}
+
+model SlotDisponibilidade {
+  id            String       @id @default(cuid())
+  tenantId      String
+  quadraId      String
+  inicioEm      DateTime
+  fimEm         DateTime
+  precoCentavos Int
+  status        StatusSlot   @default(ABERTO)
+  criadoEm      DateTime     @default(now())
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quadra        Quadra       @relation(fields: [quadraId], references: [id], onDelete: Cascade)
+  reserva       Reserva?
+
+  @@unique([quadraId, inicioEm, fimEm])
+  @@index([tenantId, quadraId, inicioEm])
+}
+
+model Reserva {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  quadraId           String
+  usuarioId          String
+  slotId             String        @unique
+  status             StatusReserva @default(PENDENTE)
+  valorTotalCentavos Int
+  criadoEm           DateTime      @default(now())
+  atualizadoEm       DateTime      @updatedAt
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quadra             Quadra        @relation(fields: [quadraId], references: [id], onDelete: Cascade)
+  usuario            Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  slot               SlotDisponibilidade @relation(fields: [slotId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status, criadoEm])
+  @@index([usuarioId, criadoEm])
+}
+
+model LogAuditoria {
+  id           String   @id @default(cuid())
+  atorUsuarioId String?
+  tenantId     String?
+  acao         String
+  entidade     String
+  entidadeId   String
+  meta         Json?
+  criadoEm     DateTime @default(now())
+
+  atorUsuario  Usuario? @relation("LogAtor", fields: [atorUsuarioId], references: [id], onDelete: SetNull)
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, criadoEm])
+}
+
+model Avaliacao {
+  id         String   @id @default(cuid())
+  tenantId   String
+  usuarioId  String
+  nota       Int
+  comentario String?
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, usuarioId])
+  @@index([tenantId, nota])
+}
