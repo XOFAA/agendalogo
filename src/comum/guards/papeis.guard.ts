@@ -22,6 +22,12 @@ export class PapeisGuard implements CanActivate {
     const usuario = req.user as UsuarioToken | undefined;
 
     if (!usuario) {
+      const authorization = req.headers?.authorization as string | undefined;
+      if (authorization?.startsWith('Bearer ')) {
+        // Deixa o JwtAuthGuard validar e popular req.user antes de negar acesso.
+        return true;
+      }
+
       throw new ForbiddenException({
         codigo: 'SEM_PERMISSAO',
         mensagem: 'Usuario sem permissao para acessar este recurso.',

@@ -6,9 +6,17 @@ import { TenantsModule } from '../tenants/tenants.module';
 import { QuadrasModule } from '../quadras/quadras.module';
 import { SlotsModule } from '../slots/slots.module';
 import { ReservasModule } from '../reservas/reservas.module';
+import { CampeonatosModule } from '../campeonatos/campeonatos.module';
 
 @Module({
-  imports: [TenantsModule, QuadrasModule, SlotsModule, ReservasModule, AvaliacoesModule],
+  imports: [
+    TenantsModule,
+    QuadrasModule,
+    SlotsModule,
+    ReservasModule,
+    AvaliacoesModule,
+    CampeonatosModule,
+  ],
   controllers: [PublicoController],
   providers: [PublicoService],
 })

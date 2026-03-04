@@ -10,6 +10,7 @@ import { AdminModule } from './admin/admin.module';
 import { PublicoModule } from './publico/publico.module';
 import { DonoTenantModule } from './dono-tenant/dono-tenant.module';
 import { UsuarioModule } from './usuario/usuario.module';
+import { CampeonatosModule } from './campeonatos/campeonatos.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UsuarioModule } from './usuario/usuario.module';
     PublicoModule,
     DonoTenantModule,
     UsuarioModule,
+    CampeonatosModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

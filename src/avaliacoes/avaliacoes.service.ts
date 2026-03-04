@@ -3,6 +3,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { StatusReserva } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -22,6 +23,9 @@ export class AvaliacoesService {
       where: {
         tenantId: dto.tenantId,
         usuarioId,
+        status: {
+          in: [StatusReserva.PENDENTE, StatusReserva.CONFIRMADA],
+        },
       },
       select: { id: true },
     });

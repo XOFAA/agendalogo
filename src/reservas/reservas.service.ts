@@ -77,6 +77,80 @@ export class ReservasService {
     });
   }
 
+  async criarReservasPublicasLote(params: {
+    tenantId: string;
+    quadraId: string;
+    slotIds: string[];
+    usuarioId: string;
+  }) {
+    const agora = new Date();
+    const slotIdsUnicos = Array.from(new Set(params.slotIds));
+
+    return this.prisma.$transaction(async (tx) => {
+      const slots = await tx.slotDisponibilidade.findMany({
+        where: {
+          id: { in: slotIdsUnicos },
+          tenantId: params.tenantId,
+          quadraId: params.quadraId,
+        },
+        orderBy: { inicioEm: 'asc' },
+      });
+
+      if (slots.length !== slotIdsUnicos.length) {
+        throw new NotFoundException({
+          codigo: 'SLOT_NAO_ENCONTRADO',
+          mensagem: 'Um ou mais slots nao foram encontrados para esta quadra.',
+        });
+      }
+
+      for (const slot of slots) {
+        if (slot.status !== StatusSlot.ABERTO) {
+          throw new ConflictException({
+            codigo: 'SLOT_INDISPONIVEL',
+            mensagem: 'Um ou mais slots nao estao disponiveis para reserva.',
+          });
+        }
+
+        if (slot.inicioEm <= agora) {
+          throw new UnprocessableEntityException({
+            codigo: 'SLOT_NO_PASSADO',
+            mensagem: 'Nao e permitido reservar slot no passado.',
+          });
+        }
+      }
+
+      const reservas = [];
+      let valorTotalCentavos = 0;
+
+      for (const slot of slots) {
+        const reserva = await tx.reserva.create({
+          data: {
+            tenantId: params.tenantId,
+            quadraId: params.quadraId,
+            usuarioId: params.usuarioId,
+            slotId: slot.id,
+            status: StatusReserva.PENDENTE,
+            valorTotalCentavos: slot.precoCentavos,
+          },
+        });
+
+        await tx.slotDisponibilidade.update({
+          where: { id: slot.id },
+          data: { status: StatusSlot.RESERVADO },
+        });
+
+        reservas.push(reserva);
+        valorTotalCentavos += slot.precoCentavos;
+      }
+
+      return {
+        totalReservas: reservas.length,
+        valorTotalCentavos,
+        reservas,
+      };
+    });
+  }
+
   async listarMinhasReservas(usuarioId: string) {
     return this.prisma.reserva.findMany({
       where: { usuarioId },

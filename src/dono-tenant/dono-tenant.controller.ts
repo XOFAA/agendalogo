@@ -10,6 +10,8 @@ import { JwtAuthGuard } from '../comum/guards/jwt-auth.guard';
 import { QuadrasService } from '../quadras/quadras.service';
 import { ReservasService } from '../reservas/reservas.service';
 import { SlotsService } from '../slots/slots.service';
+import { CampeonatosService } from '../campeonatos/campeonatos.service';
+import { CriarCampeonatoTenantDto } from './campeonatos/dto/criar-campeonato-tenant.dto';
 import { CriarQuadraDto } from './quadras/dto/criar-quadra.dto';
 import { EditarQuadraDto } from './quadras/dto/editar-quadra.dto';
 import { ListarReservasTenantQueryDto } from './reservas/dto/listar-reservas-tenant-query.dto';
@@ -27,6 +29,7 @@ export class DonoTenantController {
     private readonly slotsService: SlotsService,
     private readonly reservasService: ReservasService,
     private readonly avaliacoesService: AvaliacoesService,
+    private readonly campeonatosService: CampeonatosService,
   ) {}
 
   @Get('quadras')
@@ -128,5 +131,31 @@ export class DonoTenantController {
   @ApiOperation({ summary: 'Listar avaliacoes recebidas pelo tenant autenticado.' })
   listarAvaliacoesTenant(@UsuarioAtual('tenantId') tenantId: string) {
     return this.avaliacoesService.listarDoTenant(tenantId);
+  }
+
+  @Get('campeonatos')
+  @ApiOperation({ summary: 'Listar campeonatos do tenant autenticado.' })
+  listarCampeonatosTenant(@UsuarioAtual('tenantId') tenantId: string) {
+    return this.campeonatosService.listarDoTenant(tenantId);
+  }
+
+  @Post('campeonatos')
+  @ApiOperation({ summary: 'Criar campeonato no tenant autenticado.' })
+  @ApiResponse({ status: 201 })
+  @ApiResponse({ status: 422, type: ErroRespostaDto })
+  criarCampeonatoTenant(
+    @UsuarioAtual('tenantId') tenantId: string,
+    @Body() dto: CriarCampeonatoTenantDto,
+  ) {
+    return this.campeonatosService.criarNoTenant(tenantId, dto);
+  }
+
+  @Patch('campeonatos/:campeonatoId/encerrar')
+  @ApiOperation({ summary: 'Encerrar campeonato do tenant autenticado.' })
+  encerrarCampeonatoTenant(
+    @UsuarioAtual('tenantId') tenantId: string,
+    @Param('campeonatoId') campeonatoId: string,
+  ) {
+    return this.campeonatosService.encerrarDoTenant(tenantId, campeonatoId);
   }
 }

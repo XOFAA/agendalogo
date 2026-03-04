@@ -4,6 +4,7 @@ import { ReservasService } from '../reservas/reservas.service';
 import { SlotsService } from '../slots/slots.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { inicioEFimDoDia } from '../comum/utils/tempo';
+import { CampeonatosService } from '../campeonatos/campeonatos.service';
 
 @Injectable()
 export class PublicoService {
@@ -12,6 +13,7 @@ export class PublicoService {
     private readonly quadrasService: QuadrasService,
     private readonly slotsService: SlotsService,
     private readonly reservasService: ReservasService,
+    private readonly campeonatosService: CampeonatosService,
   ) {}
 
   listarTenants() {
@@ -33,5 +35,26 @@ export class PublicoService {
 
   criarReserva(params: { tenantId: string; quadraId: string; slotId: string; usuarioId: string }) {
     return this.reservasService.criarReservaPublica(params);
+  }
+
+  criarReservasLote(params: {
+    tenantId: string;
+    quadraId: string;
+    slotIds: string[];
+    usuarioId: string;
+  }) {
+    return this.reservasService.criarReservasPublicasLote(params);
+  }
+
+  listarCampeonatos(tenantId: string) {
+    return this.campeonatosService.listarPublicosPorTenant(tenantId);
+  }
+
+  buscarCampeonato(campeonatoId: string) {
+    return this.campeonatosService.buscarPublicoPorId(campeonatoId);
+  }
+
+  inscreverEmCampeonato(campeonatoId: string, usuarioId: string) {
+    return this.campeonatosService.inscreverUsuario(campeonatoId, usuarioId);
   }
 }
