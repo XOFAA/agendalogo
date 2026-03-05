@@ -15,6 +15,9 @@ class UsuarioTokenRespostaDto {
 
   @ApiProperty({ nullable: true, example: null })
   tenantId!: string | null;
+
+  @ApiProperty({ type: [String], example: ['clxTenant123', 'clxTenant456'] })
+  tenantIds!: string[];
 }
 
 export class TokenRespostaDto {

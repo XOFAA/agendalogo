@@ -26,17 +26,21 @@ export class AdminService {
   }
 
   async criarUsuario(dto: CriarUsuarioAdminDto) {
-    if (dto.papel === PapelUsuario.DONO_TENANT && !dto.tenantId) {
+    const tenantIds = Array.from(
+      new Set([...(dto.tenantIds ?? []), ...(dto.tenantId ? [dto.tenantId] : [])]),
+    );
+
+    if (dto.papel === PapelUsuario.DONO_TENANT && !tenantIds.length) {
       throw new BadRequestException({
         codigo: 'TENANT_OBRIGATORIO',
-        mensagem: 'Para DONO_TENANT, tenantId e obrigatorio.',
+        mensagem: 'Para DONO_TENANT, informe tenantId ou tenantIds.',
       });
     }
 
-    if (dto.papel !== PapelUsuario.DONO_TENANT && dto.tenantId) {
+    if (dto.papel !== PapelUsuario.DONO_TENANT && (dto.tenantId || (dto.tenantIds ?? []).length)) {
       throw new BadRequestException({
         codigo: 'TENANT_NAO_PERMITIDO',
-        mensagem: 'tenantId so deve ser informado para papel DONO_TENANT.',
+        mensagem: 'tenantId/tenantIds so devem ser informados para papel DONO_TENANT.',
       });
     }
 
@@ -45,7 +49,8 @@ export class AdminService {
       email: dto.email,
       senha: dto.senha,
       papel: dto.papel,
-      tenantId: dto.tenantId ?? null,
+      tenantId: tenantIds[0] ?? null,
+      tenantIds,
     });
   }
 

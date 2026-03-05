@@ -38,19 +38,39 @@ async function ensureTenantWithOwner(config, passwordHash) {
     create: { nome: config.name, slug: config.slug, imagemUrl: config.imageUrl, logoUrl: config.logoUrl },
   });
 
-  await prisma.usuario.upsert({
-    where: { email: config.ownerEmail },
-    update: {
-      nome: config.ownerName,
-      papel: PapelUsuario.DONO_TENANT,
-      tenantId: tenant.id,
-      senhaHash: passwordHash,
+  const ownerEmail = config.ownerEmail.toLowerCase();
+  const ownerExistente = await prisma.usuario.findUnique({ where: { email: ownerEmail } });
+
+  const owner = ownerExistente
+    ? await prisma.usuario.update({
+        where: { email: ownerEmail },
+        data: {
+          nome: config.ownerName,
+          papel: PapelUsuario.DONO_TENANT,
+          tenantId: ownerExistente.tenantId ?? tenant.id,
+          senhaHash: passwordHash,
+        },
+      })
+    : await prisma.usuario.create({
+        data: {
+          nome: config.ownerName,
+          email: ownerEmail,
+          senhaHash: passwordHash,
+          papel: PapelUsuario.DONO_TENANT,
+          tenantId: tenant.id,
+        },
+      });
+
+  await prisma.usuarioTenant.upsert({
+    where: {
+      usuarioId_tenantId: {
+        usuarioId: owner.id,
+        tenantId: tenant.id,
+      },
     },
+    update: {},
     create: {
-      nome: config.ownerName,
-      email: config.ownerEmail,
-      senhaHash: passwordHash,
-      papel: PapelUsuario.DONO_TENANT,
+      usuarioId: owner.id,
       tenantId: tenant.id,
     },
   });
@@ -299,27 +319,27 @@ async function main() {
 
   const tenantConfigs = [
     {
-      name: 'Arena Gol de Placa',
-      slug: 'arena-gol-de-placa',
-      imageUrl: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1200&q=80',
+      name: 'Arena Paris - Centro',
+      slug: 'arena-paris-centro',
+      imageUrl: 'https://images.unsplash.com/photo-1579952363873-27d3bfad9c0d?auto=format&fit=crop&w=1200&q=80',
       logoUrl: 'https://images.unsplash.com/photo-1560272564-c83b66b1ad12?auto=format&fit=crop&w=200&q=80',
-      ownerName: 'Dono Gol de Placa',
-      ownerEmail: 'dono@goldeplaca.com',
+      ownerName: 'Dono Arena Paris',
+      ownerEmail: 'dono@arenaparis.com',
       courts: [
-        { name: 'Campo Futebol Society', sport: TipoEsporte.FUTEBOL, priceCents: 15000 },
-        { name: 'Quadra Basquete Pro', sport: TipoEsporte.BASQUETE, priceCents: 9000 },
+        { name: 'Arena Paris Society Centro', sport: TipoEsporte.FUTEBOL, priceCents: 15000 },
+        { name: 'Arena Paris Basquete Centro', sport: TipoEsporte.BASQUETE, priceCents: 9500 },
       ],
     },
     {
-      name: 'Beach Arena Copacabana',
-      slug: 'beach-arena-copacabana',
-      imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+      name: 'Arena Paris - Zona Sul',
+      slug: 'arena-paris-zona-sul',
+      imageUrl: 'https://images.unsplash.com/photo-1543357480-c60d40007a3f?auto=format&fit=crop&w=1200&q=80',
       logoUrl: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=200&q=80',
-      ownerName: 'Dona Beach Arena',
-      ownerEmail: 'dona@beacharena.com',
+      ownerName: 'Dono Arena Paris',
+      ownerEmail: 'dono@arenaparis.com',
       courts: [
-        { name: 'Beach Tennis Premium', sport: TipoEsporte.TENIS, priceCents: 12000 },
-        { name: 'Arena Areia Volei', sport: TipoEsporte.VOLEI, priceCents: 11000 },
+        { name: 'Arena Paris Areia Sul', sport: TipoEsporte.VOLEI, priceCents: 11500 },
+        { name: 'Arena Paris Tenis Sul', sport: TipoEsporte.TENIS, priceCents: 13000 },
       ],
     },
     {
@@ -409,6 +429,7 @@ async function main() {
   console.log(`Avaliacoes: ${ratingCount}`);
   console.log(`Campeonatos: ${championshipCount}`);
   console.log('Login admin: admin@plataforma.com / Senha: Senha@1234');
+  console.log('Login dono multi-tenant: dono@arenaparis.com / Senha: Senha@1234');
   console.log('Login usuario: cliente1@email.com / Senha: Senha@1234');
   console.log(`API URL esperada no front: ${process.env.CORS_ORIGIN || '*'} (CORS)`);
   console.log(`Admin id: ${admin.id}`);

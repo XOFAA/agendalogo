@@ -50,13 +50,20 @@ export class AutenticacaoService {
     nome: string;
     papel: PapelUsuario;
     tenantId: string | null;
+    ownedTenants?: { tenantId: string }[];
   }) {
+    const tenantIds =
+      usuario.ownedTenants?.map((item) => item.tenantId) ??
+      (usuario.tenantId ? [usuario.tenantId] : []);
+    const tenantIdAtivo = usuario.tenantId ?? tenantIds[0] ?? null;
+
     const payload = {
       sub: usuario.id,
       email: usuario.email,
       nome: usuario.nome,
       papel: usuario.papel,
-      tenantId: usuario.tenantId,
+      tenantId: tenantIdAtivo,
+      tenantIds,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -69,7 +76,8 @@ export class AutenticacaoService {
         nome: usuario.nome,
         email: usuario.email,
         papel: usuario.papel,
-        tenantId: usuario.tenantId,
+        tenantId: tenantIdAtivo,
+        tenantIds,
       },
     };
   }

@@ -31,7 +31,7 @@ npm run start:dev
 Swagger: `http://localhost:3000/docs`
 
 ## Escopo multi-tenant
-- Rotas de DONO_TENANT: `tenantId` vem do JWT, nunca do body.
+- Rotas de DONO_TENANT: `tenantId` pode ser selecionado por header `x-tenant-id` (obrigatorio quando o dono possui mais de um tenant). Sem header, usa o tenant ativo do token.
 - Rotas publicas: `tenantId` vem do path `/publico/tenants/:tenantId/...`.
 - Acesso cruzado retorna `404` para evitar enumeracao de recursos.
 
@@ -100,14 +100,13 @@ Swagger: `http://localhost:3000/docs`
 
 ## Seed de dados
 O seed cria um cenario pronto com:
-- Tenant: `Arena Evento Pro`
-- Quadras: `Campo Futebol Society` e `Arena Areia Volei`
-- Slots futuros (7 dias, 18h-21h) com precos:
-  - Futebol: `R$ 180,00` (`18000` centavos)
-  - Volei de areia: `R$ 140,00` (`14000` centavos)
-- Reservas confirmadas e avaliacoes iniciais
+- Dono multi-tenant: `dono@arenaparis.com` controla:
+  - `Arena Paris - Centro`
+  - `Arena Paris - Zona Sul`
+- Cada tenant tem quadras e slots com precos/horarios independentes
+- Reservas confirmadas, avaliacoes iniciais e campeonatos
 - Usuarios de exemplo (senha para todos: `Senha@1234`):
   - `admin@plataforma.com` (ADMIN_PLATAFORMA)
-  - `dono@arenaeventopro.com` (DONO_TENANT)
+  - `dono@arenaparis.com` (DONO_TENANT com mais de um tenant)
   - `cliente1@email.com` (USUARIO)
   - `cliente2@email.com` (USUARIO)

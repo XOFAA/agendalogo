@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PapelUsuario } from '@prisma/client';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CriarUsuarioAdminDto {
   @ApiProperty({ example: 'Maria Gestora' })
@@ -25,4 +25,10 @@ export class CriarUsuarioAdminDto {
   @IsOptional()
   @IsString()
   tenantId?: string;
+
+  @ApiProperty({ required: false, type: [String], example: ['clxTenant123', 'clxTenant456'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tenantIds?: string[];
 }

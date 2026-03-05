@@ -75,10 +75,20 @@ export class CampeonatosService {
       orderBy: { dataInicio: 'asc' },
     });
 
-    const owner = await this.prisma.usuario.findFirst({
-      where: { tenantId, papel: PapelUsuario.DONO_TENANT },
-      select: { id: true, nome: true, email: true },
+    const ownerMembership = await this.prisma.usuarioTenant.findFirst({
+      where: { tenantId },
+      select: { usuarioId: true },
     });
+
+    const owner = ownerMembership
+      ? await this.prisma.usuario.findFirst({
+          where: { id: ownerMembership.usuarioId, papel: PapelUsuario.DONO_TENANT },
+          select: { id: true, nome: true, email: true },
+        })
+      : await this.prisma.usuario.findFirst({
+          where: { tenantId, papel: PapelUsuario.DONO_TENANT },
+          select: { id: true, nome: true, email: true },
+        });
 
     return campeonatos.map((camp) => ({
       ...camp,
@@ -109,10 +119,20 @@ export class CampeonatosService {
       });
     }
 
-    const owner = await this.prisma.usuario.findFirst({
-      where: { tenantId: campeonato.tenantId, papel: PapelUsuario.DONO_TENANT },
-      select: { id: true, nome: true, email: true },
+    const ownerMembership = await this.prisma.usuarioTenant.findFirst({
+      where: { tenantId: campeonato.tenantId },
+      select: { usuarioId: true },
     });
+
+    const owner = ownerMembership
+      ? await this.prisma.usuario.findFirst({
+          where: { id: ownerMembership.usuarioId, papel: PapelUsuario.DONO_TENANT },
+          select: { id: true, nome: true, email: true },
+        })
+      : await this.prisma.usuario.findFirst({
+          where: { tenantId: campeonato.tenantId, papel: PapelUsuario.DONO_TENANT },
+          select: { id: true, nome: true, email: true },
+        });
 
     return {
       ...campeonato,

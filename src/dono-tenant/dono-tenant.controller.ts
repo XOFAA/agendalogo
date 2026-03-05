@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AvaliacoesService } from '../avaliacoes/avaliacoes.service';
-import { UsuarioAtual } from '../comum/decorators/usuario-atual.decorator';
+import { TenantAtual } from '../comum/decorators/tenant-atual.decorator';
 import { Papeis } from '../comum/decorators/papeis.decorator';
 import { ErroRespostaDto } from '../comum/dto/erro-resposta.dto';
 import { Papel } from '../comum/enum/papel.enum';
@@ -20,6 +20,11 @@ import { CriarSlotsDto } from './slots/dto/criar-slots.dto';
 
 @ApiTags('Dono Tenant')
 @ApiBearerAuth()
+@ApiHeader({
+  name: 'x-tenant-id',
+  required: false,
+  description: 'Tenant alvo do dono autenticado. Obrigatorio quando o dono possui mais de um tenant.',
+})
 @UseGuards(JwtAuthGuard, EscopoTenantGuard)
 @Papeis(Papel.DONO_TENANT)
 @Controller('tenant')
@@ -34,20 +39,20 @@ export class DonoTenantController {
 
   @Get('quadras')
   @ApiOperation({ summary: 'Listar quadras do tenant autenticado.' })
-  listarQuadras(@UsuarioAtual('tenantId') tenantId: string) {
+  listarQuadras(@TenantAtual() tenantId: string) {
     return this.quadrasService.listarPorTenant(tenantId, false);
   }
 
   @Post('quadras')
   @ApiOperation({ summary: 'Criar quadra no tenant autenticado.' })
-  criarQuadra(@UsuarioAtual('tenantId') tenantId: string, @Body() dto: CriarQuadraDto) {
+  criarQuadra(@TenantAtual() tenantId: string, @Body() dto: CriarQuadraDto) {
     return this.quadrasService.criar(tenantId, dto.nome, dto.tipoEsporte);
   }
 
   @Patch('quadras/:quadraId')
   @ApiOperation({ summary: 'Editar quadra do proprio tenant.' })
   editarQuadra(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Param('quadraId') quadraId: string,
     @Body() dto: EditarQuadraDto,
   ) {
@@ -56,7 +61,7 @@ export class DonoTenantController {
 
   @Delete('quadras/:quadraId')
   @ApiOperation({ summary: 'Desativar quadra (soft delete -> ativa=false).' })
-  desativarQuadra(@UsuarioAtual('tenantId') tenantId: string, @Param('quadraId') quadraId: string) {
+  desativarQuadra(@TenantAtual() tenantId: string, @Param('quadraId') quadraId: string) {
     return this.quadrasService.atualizarDoTenant(tenantId, quadraId, { ativa: false });
   }
 
@@ -64,7 +69,7 @@ export class DonoTenantController {
   @ApiOperation({ summary: 'Criar slots em lote para quadra do tenant.' })
   @ApiResponse({ status: 409, type: ErroRespostaDto })
   criarSlots(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Param('quadraId') quadraId: string,
     @Body() dto: CriarSlotsDto,
   ) {
@@ -82,7 +87,7 @@ export class DonoTenantController {
   @Post('quadras/:quadraId/slots/bloquear')
   @ApiOperation({ summary: 'Bloquear slots por ids ou por intervalo.' })
   bloquearSlots(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Param('quadraId') quadraId: string,
     @Body() dto: BloquearSlotsDto,
   ) {
@@ -95,14 +100,14 @@ export class DonoTenantController {
 
   @Delete('slots/:slotId')
   @ApiOperation({ summary: 'Remover slot do tenant (exceto se RESERVADO).' })
-  removerSlot(@UsuarioAtual('tenantId') tenantId: string, @Param('slotId') slotId: string) {
+  removerSlot(@TenantAtual() tenantId: string, @Param('slotId') slotId: string) {
     return this.slotsService.removerDoTenant(tenantId, slotId);
   }
 
   @Get('reservas')
   @ApiOperation({ summary: 'Listar reservas do tenant com filtros opcionais.' })
   listarReservas(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Query() query: ListarReservasTenantQueryDto,
   ) {
     return this.reservasService.listarReservasTenant({
@@ -116,26 +121,26 @@ export class DonoTenantController {
   @Patch('reservas/:reservaId/cancelar')
   @ApiOperation({ summary: 'Cancelar reserva do tenant.' })
   @ApiResponse({ status: 422, type: ErroRespostaDto })
-  cancelarReserva(@UsuarioAtual('tenantId') tenantId: string, @Param('reservaId') reservaId: string) {
+  cancelarReserva(@TenantAtual() tenantId: string, @Param('reservaId') reservaId: string) {
     return this.reservasService.cancelarPorTenant(tenantId, reservaId);
   }
 
   @Patch('reservas/:reservaId/confirmar')
   @ApiOperation({ summary: 'Confirmar reserva PENDENTE do tenant.' })
   @ApiResponse({ status: 422, type: ErroRespostaDto })
-  confirmarReserva(@UsuarioAtual('tenantId') tenantId: string, @Param('reservaId') reservaId: string) {
+  confirmarReserva(@TenantAtual() tenantId: string, @Param('reservaId') reservaId: string) {
     return this.reservasService.confirmarPorTenant(tenantId, reservaId);
   }
 
   @Get('avaliacoes')
   @ApiOperation({ summary: 'Listar avaliacoes recebidas pelo tenant autenticado.' })
-  listarAvaliacoesTenant(@UsuarioAtual('tenantId') tenantId: string) {
+  listarAvaliacoesTenant(@TenantAtual() tenantId: string) {
     return this.avaliacoesService.listarDoTenant(tenantId);
   }
 
   @Get('campeonatos')
   @ApiOperation({ summary: 'Listar campeonatos do tenant autenticado.' })
-  listarCampeonatosTenant(@UsuarioAtual('tenantId') tenantId: string) {
+  listarCampeonatosTenant(@TenantAtual() tenantId: string) {
     return this.campeonatosService.listarDoTenant(tenantId);
   }
 
@@ -144,7 +149,7 @@ export class DonoTenantController {
   @ApiResponse({ status: 201 })
   @ApiResponse({ status: 422, type: ErroRespostaDto })
   criarCampeonatoTenant(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Body() dto: CriarCampeonatoTenantDto,
   ) {
     return this.campeonatosService.criarNoTenant(tenantId, dto);
@@ -153,7 +158,7 @@ export class DonoTenantController {
   @Patch('campeonatos/:campeonatoId/encerrar')
   @ApiOperation({ summary: 'Encerrar campeonato do tenant autenticado.' })
   encerrarCampeonatoTenant(
-    @UsuarioAtual('tenantId') tenantId: string,
+    @TenantAtual() tenantId: string,
     @Param('campeonatoId') campeonatoId: string,
   ) {
     return this.campeonatosService.encerrarDoTenant(tenantId, campeonatoId);

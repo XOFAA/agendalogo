@@ -43,6 +43,7 @@ model Tenant {
   criadoEm  DateTime  @default(now())
 
   usuarios  Usuario[]
+  owners    UsuarioTenant[]
   quadras   Quadra[]
   slots     SlotDisponibilidade[]
   reservas  Reserva[]
@@ -61,10 +62,24 @@ model Usuario {
   criadoEm   DateTime     @default(now())
 
   tenant     Tenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  ownedTenants UsuarioTenant[]
   reservas   Reserva[]
   avaliacoes Avaliacao[]
   inscricoesCampeonato CampeonatoInscricao[]
   logsAtor   LogAuditoria[] @relation("LogAtor")
+}
+
+model UsuarioTenant {
+  id        String   @id @default(cuid())
+  usuarioId String
+  tenantId  String
+  criadoEm  DateTime @default(now())
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tenantId])
+  @@index([tenantId])
 }
 
 model Quadra {

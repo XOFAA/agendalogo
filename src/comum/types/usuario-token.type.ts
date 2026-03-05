@@ -6,4 +6,5 @@ export type UsuarioToken = {
   nome: string;
   papel: Papel;
   tenantId: string | null;
+  tenantIds: string[];
 };
