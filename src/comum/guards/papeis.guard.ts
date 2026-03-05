@@ -1,12 +1,16 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
 import { CHAVE_PAPEIS } from '../decorators/papeis.decorator';
 import { Papel } from '../enum/papel.enum';
 import { UsuarioToken } from '../types/usuario-token.type';
 
 @Injectable()
 export class PapeisGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly jwtService: JwtService,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const papeisPermitidos = this.reflector.getAllAndOverride<Papel[]>(CHAVE_PAPEIS, [
@@ -19,15 +23,24 @@ export class PapeisGuard implements CanActivate {
     }
 
     const req = context.switchToHttp().getRequest();
-    const usuario = req.user as UsuarioToken | undefined;
+    let usuario = req.user as UsuarioToken | undefined;
+
+    if (!usuario && typeof req.headers?.authorization === 'string') {
+      const [tipo, token] = req.headers.authorization.split(' ');
+      if (tipo === 'Bearer' && token) {
+        try {
+          usuario = this.jwtService.verify<UsuarioToken>(token);
+          req.user = usuario;
+        } catch {
+          throw new ForbiddenException({
+            codigo: 'TOKEN_INVALIDO',
+            mensagem: 'Token JWT invalido ou expirado.',
+          });
+        }
+      }
+    }
 
     if (!usuario) {
-      const authorization = req.headers?.authorization as string | undefined;
-      if (authorization?.startsWith('Bearer ')) {
-        // Deixa o JwtAuthGuard validar e popular req.user antes de negar acesso.
-        return true;
-      }
-
       throw new ForbiddenException({
         codigo: 'SEM_PERMISSAO',
         mensagem: 'Usuario sem permissao para acessar este recurso.',

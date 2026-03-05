@@ -17,6 +17,9 @@ type CriarUsuarioParams = {
   tenantIds?: string[];
 };
 
+type UsuarioComTenants = Usuario & { ownedTenants: { tenantId: string }[] };
+type UsuarioSeguro = Omit<Usuario, 'senhaHash'> & { ownedTenants: { tenantId: string }[] };
+
 @Injectable()
 export class UsuariosService {
   constructor(private readonly prisma: PrismaService) {}
@@ -25,9 +28,15 @@ export class UsuariosService {
     return ownedTenants.map((item) => ({ tenantId: item.tenantId }));
   }
 
-  async criarUsuario(
-    params: CriarUsuarioParams,
-  ): Promise<Usuario & { ownedTenants: { tenantId: string }[] }> {
+  private sanitizeUsuario(usuario: Usuario, ownedTenants: Array<{ tenantId: string }>): UsuarioSeguro {
+    const { senhaHash: _senhaHash, ...restante } = usuario;
+    return {
+      ...restante,
+      ownedTenants: this.mapOwnedTenantIds(ownedTenants),
+    };
+  }
+
+  async criarUsuario(params: CriarUsuarioParams): Promise<UsuarioSeguro> {
     const papel = params.papel ?? PapelUsuario.USUARIO;
     const tenantIdsNormalizados = Array.from(
       new Set([...(params.tenantIds ?? []), ...(params.tenantId ? [params.tenantId] : [])]),
@@ -51,6 +60,19 @@ export class UsuariosService {
     const tenantPrincipalId =
       papel === PapelUsuario.DONO_TENANT ? tenantIdsNormalizados[0] ?? null : null;
 
+    if (tenantIdsNormalizados.length) {
+      const tenantsExistentes = await this.prisma.tenant.findMany({
+        where: { id: { in: tenantIdsNormalizados } },
+        select: { id: true },
+      });
+      if (tenantsExistentes.length !== tenantIdsNormalizados.length) {
+        throw new BadRequestException({
+          codigo: 'TENANT_INVALIDO',
+          mensagem: 'Um ou mais tenantIds informados nao existem.',
+        });
+      }
+    }
+
     try {
       const usuarioCriado = await this.prisma.usuario.create({
         data: {
@@ -72,10 +94,10 @@ export class UsuariosService {
         });
       }
 
-      return {
-        ...usuarioCriado,
-        ownedTenants: tenantIdsNormalizados.map((tenantId) => ({ tenantId })),
-      };
+      return this.sanitizeUsuario(
+        usuarioCriado,
+        tenantIdsNormalizados.map((tenantId) => ({ tenantId })),
+      );
     } catch (erro) {
       if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002') {
         throw new ConflictException({
@@ -87,7 +109,7 @@ export class UsuariosService {
     }
   }
 
-  async buscarPorEmail(email: string): Promise<(Usuario & { ownedTenants: { tenantId: string }[] }) | null> {
+  async buscarPorEmail(email: string): Promise<UsuarioComTenants | null> {
     const usuario = await this.prisma.usuario.findUnique({
       where: { email: email.toLowerCase() },
     });
@@ -117,8 +139,33 @@ export class UsuariosService {
     return usuario;
   }
 
-  async listar(): Promise<Usuario[]> {
-    return this.prisma.usuario.findMany({ orderBy: { criadoEm: 'desc' } });
+  async listar(): Promise<UsuarioSeguro[]> {
+    const usuarios = await this.prisma.usuario.findMany({
+      orderBy: { criadoEm: 'desc' },
+    });
+    const usuarioIds = usuarios.map((usuario) => usuario.id);
+
+    const memberships = usuarioIds.length
+      ? await this.prisma.usuarioTenant.findMany({
+          where: { usuarioId: { in: usuarioIds } },
+          select: { usuarioId: true, tenantId: true },
+        })
+      : [];
+
+    const membershipsPorUsuario = memberships.reduce<Record<string, Array<{ tenantId: string }>>>(
+      (acc, membership) => {
+        if (!acc[membership.usuarioId]) {
+          acc[membership.usuarioId] = [];
+        }
+        acc[membership.usuarioId].push({ tenantId: membership.tenantId });
+        return acc;
+      },
+      {},
+    );
+
+    return usuarios.map((usuario) =>
+      this.sanitizeUsuario(usuario, membershipsPorUsuario[usuario.id] ?? []),
+    );
   }
 
   async validarSenha(senha: string, senhaHash: string): Promise<boolean> {

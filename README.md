@@ -18,6 +18,9 @@ Copie `.env.example` para `.env` e preencha:
 - `CORS_ORIGIN`
 - `RATE_LIMIT_TTL`
 - `RATE_LIMIT_LIMIT`
+- `PORT` (padrao `3000`)
+- `HOST` (padrao `0.0.0.0`)
+- `SWAGGER_PATH` (padrao `docs`)
 
 ## Como rodar
 ```bash

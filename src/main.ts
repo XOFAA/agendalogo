@@ -11,7 +11,17 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
-  app.use(helmet());
+  const httpServer = app.getHttpAdapter().getInstance();
+  if (typeof httpServer?.set === 'function') {
+    httpServer.set('trust proxy', true);
+  }
+  app.use(
+    helmet({
+      // Swagger UI usa scripts inline; com CSP default do Helmet ele pode quebrar em proxy/reverse-proxy.
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   app.enableCors({
     origin: config.get<string>('CORS_ORIGIN', '*'),
     credentials: true,
@@ -46,14 +56,17 @@ async function bootstrap(): Promise<void> {
     .addBearerAuth()
     .build();
 
+  const swaggerPath = config.get<string>('SWAGGER_PATH', 'docs');
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document, {
+  SwaggerModule.setup(swaggerPath, app, document, {
     swaggerOptions: {
       persistAuthorization: true,
     },
   });
 
-  await app.listen(3000);
+  const port = Number(config.get<string>('PORT', '3000'));
+  const host = config.get<string>('HOST', '0.0.0.0');
+  await app.listen(port, host);
 }
 
 bootstrap();
