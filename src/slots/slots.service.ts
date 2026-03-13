@@ -141,4 +141,25 @@ export class SlotsService {
       orderBy: { inicioEm: 'asc' },
     });
   }
+
+  async listarDisponibilidadeDoTenant(tenantId: string, inicio: Date, fim: Date) {
+    return this.prisma.slotDisponibilidade.findMany({
+      where: {
+        tenantId,
+        inicioEm: {
+          gte: inicio,
+          lte: fim,
+        },
+      },
+      include: {
+        quadra: true,
+        reserva: {
+          include: {
+            usuario: true,
+          },
+        },
+      },
+      orderBy: [{ quadra: { nome: 'asc' } }, { inicioEm: 'asc' }],
+    });
+  }
 }

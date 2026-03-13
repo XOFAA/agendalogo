@@ -86,6 +86,7 @@ model Quadra {
   id          String               @id @default(cuid())
   tenantId    String
   nome        String
+  imagemUrl   String?
   tipoEsporte TipoEsporte
   ativa       Boolean              @default(true)
   criadoEm    DateTime             @default(now())

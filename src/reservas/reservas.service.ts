@@ -5,8 +5,11 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PapelUsuario, Prisma, StatusReserva, StatusSlot } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { StatusReserva, StatusSlot } from '@prisma/client';
+import { UsuariosService } from '../usuarios/usuarios.service';
+
+const TAXA_RESERVA_CENTAVOS = 200;
 
 @Injectable()
 export class ReservasService {
@@ -15,8 +18,107 @@ export class ReservasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly usuariosService: UsuariosService,
   ) {
     this.horasLimiteCancelamento = this.config.get<number>('CANCELAMENTO_HORAS_LIMITE', 2);
+  }
+
+  private async validarSlotDisponivel(
+    tx: Prisma.TransactionClient,
+    params: { tenantId: string; quadraId: string; slotId: string },
+  ) {
+    const agora = new Date();
+    const slot = await tx.slotDisponibilidade.findFirst({
+      where: {
+        id: params.slotId,
+        tenantId: params.tenantId,
+        quadraId: params.quadraId,
+      },
+    });
+
+    if (!slot) {
+      throw new NotFoundException({
+        codigo: 'SLOT_NAO_ENCONTRADO',
+        mensagem: 'Slot nao encontrado.',
+      });
+    }
+
+    if (slot.status !== StatusSlot.ABERTO) {
+      throw new ConflictException({
+        codigo: 'SLOT_INDISPONIVEL',
+        mensagem: 'Slot nao esta disponivel para reserva.',
+      });
+    }
+
+    if (slot.inicioEm <= agora) {
+      throw new UnprocessableEntityException({
+        codigo: 'SLOT_NO_PASSADO',
+        mensagem: 'Nao e permitido reservar slot no passado.',
+      });
+    }
+
+    return slot;
+  }
+
+  private async criarReservaInterna(
+    tx: Prisma.TransactionClient,
+    params: {
+      tenantId: string;
+      quadraId: string;
+      slotId: string;
+      usuarioId: string;
+      status: StatusReserva;
+    },
+  ) {
+    const slot = await this.validarSlotDisponivel(tx, params);
+
+    const reserva = await tx.reserva.create({
+      data: {
+        tenantId: params.tenantId,
+        quadraId: params.quadraId,
+        usuarioId: params.usuarioId,
+        slotId: params.slotId,
+        status: params.status,
+        valorTotalCentavos: slot.precoCentavos + TAXA_RESERVA_CENTAVOS,
+      },
+      include: {
+        slot: true,
+        quadra: true,
+        usuario: true,
+      },
+    });
+
+    await tx.slotDisponibilidade.update({
+      where: { id: slot.id },
+      data: { status: StatusSlot.RESERVADO },
+    });
+
+    return reserva;
+  }
+
+  private async obterOuCriarClientePresencial(params: {
+    nome: string;
+    email?: string;
+  }) {
+    const emailInformado = params.email?.trim().toLowerCase();
+
+    if (emailInformado) {
+      const usuarioExistente = await this.usuariosService.buscarPorEmail(emailInformado);
+      if (usuarioExistente) {
+        return usuarioExistente;
+      }
+    }
+
+    const emailGerado =
+      emailInformado ??
+      `presencial+${Date.now()}-${Math.round(Math.random() * 1_000_000)}@agendalogo.local`;
+
+    return this.usuariosService.criarUsuario({
+      nome: params.nome,
+      email: emailGerado,
+      senha: `presencial-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`,
+      papel: PapelUsuario.USUARIO,
+    });
   }
 
   async criarReservaPublica(params: {
@@ -25,56 +127,12 @@ export class ReservasService {
     slotId: string;
     usuarioId: string;
   }) {
-    const agora = new Date();
-
-    return this.prisma.$transaction(async (tx) => {
-      const slot = await tx.slotDisponibilidade.findFirst({
-        where: {
-          id: params.slotId,
-          tenantId: params.tenantId,
-          quadraId: params.quadraId,
-        },
-      });
-
-      if (!slot) {
-        throw new NotFoundException({
-          codigo: 'SLOT_NAO_ENCONTRADO',
-          mensagem: 'Slot nao encontrado.',
-        });
-      }
-
-      if (slot.status !== StatusSlot.ABERTO) {
-        throw new ConflictException({
-          codigo: 'SLOT_INDISPONIVEL',
-          mensagem: 'Slot nao esta disponivel para reserva.',
-        });
-      }
-
-      if (slot.inicioEm <= agora) {
-        throw new UnprocessableEntityException({
-          codigo: 'SLOT_NO_PASSADO',
-          mensagem: 'Nao e permitido reservar slot no passado.',
-        });
-      }
-
-      const reserva = await tx.reserva.create({
-        data: {
-          tenantId: params.tenantId,
-          quadraId: params.quadraId,
-          usuarioId: params.usuarioId,
-          slotId: params.slotId,
-          status: StatusReserva.PENDENTE,
-          valorTotalCentavos: slot.precoCentavos,
-        },
-      });
-
-      await tx.slotDisponibilidade.update({
-        where: { id: slot.id },
-        data: { status: StatusSlot.RESERVADO },
-      });
-
-      return reserva;
-    });
+    return this.prisma.$transaction((tx) =>
+      this.criarReservaInterna(tx, {
+        ...params,
+        status: StatusReserva.CONFIRMADA,
+      }),
+    );
   }
 
   async criarReservasPublicasLote(params: {
@@ -83,7 +141,6 @@ export class ReservasService {
     slotIds: string[];
     usuarioId: string;
   }) {
-    const agora = new Date();
     const slotIdsUnicos = Array.from(new Set(params.slotIds));
 
     return this.prisma.$transaction(async (tx) => {
@@ -104,43 +161,26 @@ export class ReservasService {
       }
 
       for (const slot of slots) {
-        if (slot.status !== StatusSlot.ABERTO) {
-          throw new ConflictException({
-            codigo: 'SLOT_INDISPONIVEL',
-            mensagem: 'Um ou mais slots nao estao disponiveis para reserva.',
-          });
-        }
-
-        if (slot.inicioEm <= agora) {
-          throw new UnprocessableEntityException({
-            codigo: 'SLOT_NO_PASSADO',
-            mensagem: 'Nao e permitido reservar slot no passado.',
-          });
-        }
+        await this.validarSlotDisponivel(tx, {
+          tenantId: params.tenantId,
+          quadraId: params.quadraId,
+          slotId: slot.id,
+        });
       }
 
       const reservas = [];
       let valorTotalCentavos = 0;
 
       for (const slot of slots) {
-        const reserva = await tx.reserva.create({
-          data: {
-            tenantId: params.tenantId,
-            quadraId: params.quadraId,
-            usuarioId: params.usuarioId,
-            slotId: slot.id,
-            status: StatusReserva.PENDENTE,
-            valorTotalCentavos: slot.precoCentavos,
-          },
+        const reserva = await this.criarReservaInterna(tx, {
+          tenantId: params.tenantId,
+          quadraId: params.quadraId,
+          usuarioId: params.usuarioId,
+          slotId: slot.id,
+          status: StatusReserva.CONFIRMADA,
         });
-
-        await tx.slotDisponibilidade.update({
-          where: { id: slot.id },
-          data: { status: StatusSlot.RESERVADO },
-        });
-
         reservas.push(reserva);
-        valorTotalCentavos += slot.precoCentavos;
+        valorTotalCentavos += reserva.valorTotalCentavos;
       }
 
       return {
@@ -149,6 +189,29 @@ export class ReservasService {
         reservas,
       };
     });
+  }
+
+  async criarReservaPresencial(params: {
+    tenantId: string;
+    quadraId: string;
+    slotId: string;
+    clienteNome: string;
+    clienteEmail?: string;
+  }) {
+    const cliente = await this.obterOuCriarClientePresencial({
+      nome: params.clienteNome,
+      email: params.clienteEmail,
+    });
+
+    return this.prisma.$transaction((tx) =>
+      this.criarReservaInterna(tx, {
+        tenantId: params.tenantId,
+        quadraId: params.quadraId,
+        slotId: params.slotId,
+        usuarioId: cliente.id,
+        status: StatusReserva.CONFIRMADA,
+      }),
+    );
   }
 
   async listarMinhasReservas(usuarioId: string) {

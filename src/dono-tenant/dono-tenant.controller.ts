@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AvaliacoesService } from '../avaliacoes/avaliacoes.service';
 import { TenantAtual } from '../comum/decorators/tenant-atual.decorator';
@@ -14,9 +26,50 @@ import { CampeonatosService } from '../campeonatos/campeonatos.service';
 import { CriarCampeonatoTenantDto } from './campeonatos/dto/criar-campeonato-tenant.dto';
 import { CriarQuadraDto } from './quadras/dto/criar-quadra.dto';
 import { EditarQuadraDto } from './quadras/dto/editar-quadra.dto';
+import { CriarReservaPresencialDto } from './reservas/dto/criar-reserva-presencial.dto';
 import { ListarReservasTenantQueryDto } from './reservas/dto/listar-reservas-tenant-query.dto';
 import { BloquearSlotsDto } from './slots/dto/bloquear-slots.dto';
 import { CriarSlotsDto } from './slots/dto/criar-slots.dto';
+import { ListarDisponibilidadeQueryDto } from './slots/dto/listar-disponibilidade-query.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { mkdirSync } from 'node:fs';
+import { extname, join } from 'node:path';
+import type { Request } from 'express';
+import { inicioEFimDoDia } from '../comum/utils/tempo';
+
+const uploadDir = join(process.cwd(), 'uploads', 'quadras');
+mkdirSync(uploadDir, { recursive: true });
+
+function sanitizeFilename(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .toLowerCase();
+}
+
+const quadraImageInterceptor = FileInterceptor('imagem', {
+  storage: diskStorage({
+    destination: uploadDir,
+    filename: (_req: Request, file: Express.Multer.File, callback) => {
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      const extension = extname(file.originalname || '') || '.jpg';
+      callback(null, `${sanitizeFilename(file.fieldname)}-${uniqueSuffix}${extension}`);
+    },
+  }),
+  fileFilter: (_req: Request, file: Express.Multer.File, callback) => {
+    if (!file.mimetype.startsWith('image/')) {
+      callback(new Error('Arquivo enviado nao e uma imagem.'), false);
+      return;
+    }
+    callback(null, true);
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+});
 
 @ApiTags('Dono Tenant')
 @ApiBearerAuth()
@@ -46,7 +99,7 @@ export class DonoTenantController {
   @Post('quadras')
   @ApiOperation({ summary: 'Criar quadra no tenant autenticado.' })
   criarQuadra(@TenantAtual() tenantId: string, @Body() dto: CriarQuadraDto) {
-    return this.quadrasService.criar(tenantId, dto.nome, dto.tipoEsporte);
+    return this.quadrasService.criar(tenantId, dto.nome, dto.tipoEsporte, dto.imagemUrl);
   }
 
   @Patch('quadras/:quadraId')
@@ -57,6 +110,31 @@ export class DonoTenantController {
     @Body() dto: EditarQuadraDto,
   ) {
     return this.quadrasService.atualizarDoTenant(tenantId, quadraId, dto);
+  }
+
+  @Post('quadras/:quadraId/imagem')
+  @UseInterceptors(quadraImageInterceptor)
+  @ApiOperation({ summary: 'Enviar foto da quadra do tenant autenticado.' })
+  async enviarImagemQuadra(
+    @TenantAtual() tenantId: string,
+    @Param('quadraId') quadraId: string,
+    @UploadedFile() file?: { filename: string },
+  ) {
+    if (!file?.filename) {
+      return {
+        upload: false,
+        mensagem: 'Nenhuma imagem enviada.',
+      };
+    }
+
+    const imagemUrl = `/uploads/quadras/${file.filename}`;
+    const quadra = await this.quadrasService.atualizarImagemDoTenant(tenantId, quadraId, imagemUrl);
+
+    return {
+      upload: true,
+      imagemUrl,
+      quadra,
+    };
   }
 
   @Delete('quadras/:quadraId')
@@ -104,6 +182,16 @@ export class DonoTenantController {
     return this.slotsService.removerDoTenant(tenantId, slotId);
   }
 
+  @Get('slots/disponibilidade')
+  @ApiOperation({ summary: 'Listar slots do tenant por dia, incluindo disponiveis, reservados e bloqueados.' })
+  listarDisponibilidadeDia(
+    @TenantAtual() tenantId: string,
+    @Query() query: ListarDisponibilidadeQueryDto,
+  ) {
+    const { inicio, fim } = inicioEFimDoDia(query.data);
+    return this.slotsService.listarDisponibilidadeDoTenant(tenantId, inicio, fim);
+  }
+
   @Get('reservas')
   @ApiOperation({ summary: 'Listar reservas do tenant com filtros opcionais.' })
   listarReservas(
@@ -130,6 +218,21 @@ export class DonoTenantController {
   @ApiResponse({ status: 422, type: ErroRespostaDto })
   confirmarReserva(@TenantAtual() tenantId: string, @Param('reservaId') reservaId: string) {
     return this.reservasService.confirmarPorTenant(tenantId, reservaId);
+  }
+
+  @Post('reservas/presencial')
+  @ApiOperation({ summary: 'Criar reserva presencial do tenant, ja confirmada, com taxa fixa aplicada.' })
+  criarReservaPresencial(
+    @TenantAtual() tenantId: string,
+    @Body() dto: CriarReservaPresencialDto,
+  ) {
+    return this.reservasService.criarReservaPresencial({
+      tenantId,
+      quadraId: dto.quadraId,
+      slotId: dto.slotId,
+      clienteNome: dto.clienteNome,
+      clienteEmail: dto.clienteEmail,
+    });
   }
 
   @Get('avaliacoes')

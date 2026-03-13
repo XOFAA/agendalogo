@@ -2,7 +2,9 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import express from 'express';
 import helmet from 'helmet';
+import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { FiltroExcecaoGlobal } from './comum/filtros/filtro-excecao-global';
 import { RespostaPadraoInterceptor } from './comum/interceptores/resposta.interceptor';
@@ -26,6 +28,7 @@ async function bootstrap(): Promise<void> {
     origin: config.get<string>('CORS_ORIGIN', '*'),
     credentials: true,
   });
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   app.useGlobalPipes(
     new ValidationPipe({
